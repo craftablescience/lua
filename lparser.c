@@ -1403,6 +1403,44 @@ static void restassign (LexState *ls, struct LHS_assign *lh, int nvars) {
 }
 
 
+/*
+** Parse and compile a compound assignment.
+** Made by https://github.com/samhocevar
+**
+** compoundassign -> ( '+=' | '-=' | '*=' | '/=' | '%=' | '..=' | '^=' ) expression
+*/
+static void compoundassign (LexState *ls, expdesc *v) {
+  int i, line, extra;
+  FuncState *fs = ls->fs;
+  expdesc e1 = *v, e2;
+  BinOpr op = ls->t.token == TK_ADDA ? OPR_ADD :
+              ls->t.token == TK_SUBA ? OPR_SUB :
+              ls->t.token == TK_MULA ? OPR_MUL :
+              ls->t.token == TK_DIVA ? OPR_DIV :
+              ls->t.token == TK_MODA ? OPR_MOD :
+              ls->t.token == TK_CONCATA ? OPR_CONCAT :
+              ls->t.token == TK_POWA ? OPR_POW :
+              OPR_NOBINOPR;
+  extra = fs->freereg - fs->nactvar;
+  for (i = 0; i < extra; ++i)
+    new_localvarliteral(ls, "(for compound)");
+  adjustlocalvars(ls, extra);
+
+  luaX_next(ls);
+  line = ls->linenumber;
+
+  enterlevel(ls);
+  luaK_infix(fs, op, &e1);
+  expr(ls, &e2);
+  luaK_posfix(fs, op, &e1, &e2, line);
+  leavelevel(ls);
+
+  luaK_exp2nextreg(fs, &e1);
+  luaK_setoneret(ls->fs, &e1);
+  luaK_storevar(ls->fs, v, &e1);
+}
+
+
 static int cond (LexState *ls) {
   /* cond -> exp */
   expdesc v;
@@ -1797,7 +1835,17 @@ static void exprstat (LexState *ls) {
   FuncState *fs = ls->fs;
   struct LHS_assign v;
   suffixedexp(ls, &v.v);
-  if (ls->t.token == '=' || ls->t.token == ',') { /* stat -> assignment ? */
+  if (ls->t.token == TK_ADDA ||
+      ls->t.token == TK_SUBA ||
+      ls->t.token == TK_MULA ||
+      ls->t.token == TK_DIVA ||
+      ls->t.token == TK_MODA ||
+      ls->t.token == TK_CONCATA ||
+      ls->t.token == TK_POWA) {
+    v.prev = NULL;
+    compoundassign(ls, &v.v);
+  }
+  else if (ls->t.token == '=' || ls->t.token == ',') { /* stat -> assignment ? */
     v.prev = NULL;
     restassign(ls, &v, 1);
   }

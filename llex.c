@@ -42,8 +42,9 @@ static const char *const luaX_tokens [] = {
     "end", "false", "for", "function", "goto", "if",
     "in", "local", "nil", "not", "or", "repeat",
     "return", "then", "true", "until", "while",
-    "//", "..", "...", "==", ">=", "<=", "~=", "!=",
-    "<<", ">>", "::", "<eof>",
+    "//", "..", "..=", "...", "==", ">=", "<=", "~=", "!=",
+    "<<", ">>", "+=", "-=", "*=", "/=", "%=", "^=",
+    "::", "<eof>",
     "<number>", "<integer>", "<name>", "<string>"
 };
 
@@ -454,9 +455,13 @@ static int llex (LexState *ls, SemInfo *seminfo) {
         next(ls);
         break;
       }
-      case '-': {  /* '-' or '--' (comment) */
+      case '-': {  /* '-' or '-=' or '--' (comment) */
         next(ls);
-        if (ls->current != '-') return '-';
+        if (ls->current == '=') {
+          next(ls);
+          return TK_SUBE;
+        }
+        else if (ls->current != '-') return '-';
         /* else is a comment */
         next(ls);
         if (ls->current == '[') {  /* long comment? */
@@ -502,8 +507,29 @@ static int llex (LexState *ls, SemInfo *seminfo) {
       }
       case '/': {
         next(ls);
-        if (check_next1(ls, '/')) return TK_IDIV;  /* '//' */
+        if (ls->current == '=') {
+          next(ls);
+          return TK_DIVE;
+        }
+        else if (check_next1(ls, '/')) return TK_IDIV;  /* '//' */
         else return '/';
+      }
+      case '+':
+      case '*':
+      case '%':
+      case '^': {
+        int c = ls->current;
+        next(ls);
+        if (ls->current != '=') return c; /* '+', '*', '%', '^' */
+        else {
+          next(ls);
+          switch (c) {
+            case '+': return TK_ADDA;  /* '+=' */
+            case '*': return TK_MULA;  /* '*=' */
+            case '%': return TK_MODA;  /* '%=' */
+            case '^': return TK_POWA;  /* '^=' */
+          }
+        }
       }
       case '~':
       case '!': {
@@ -521,11 +547,13 @@ static int llex (LexState *ls, SemInfo *seminfo) {
         read_string(ls, ls->current, seminfo);
         return TK_STRING;
       }
-      case '.': {  /* '.', '..', '...', or number */
+      case '.': {  /* '.', '..', '..=', '...', or number */
         save_and_next(ls);
         if (check_next1(ls, '.')) {
           if (check_next1(ls, '.'))
             return TK_DOTS;   /* '...' */
+          else if (check_next(ls, "="))
+            return TK_CONCATA;   /* '..=' */
           else return TK_CONCAT;   /* '..' */
         }
         else if (!lisdigit(ls->current)) return '.';
