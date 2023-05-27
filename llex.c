@@ -459,7 +459,7 @@ static int llex (LexState *ls, SemInfo *seminfo) {
         next(ls);
         if (ls->current == '=') {
           next(ls);
-          return TK_SUBE;
+          return TK_SUBA;
         }
         else if (ls->current != '-') return '-';
         /* else is a comment */
@@ -509,7 +509,7 @@ static int llex (LexState *ls, SemInfo *seminfo) {
         next(ls);
         if (ls->current == '=') {
           next(ls);
-          return TK_DIVE;
+          return TK_DIVA;
         }
         else if (check_next1(ls, '/')) return TK_IDIV;  /* '//' */
         else return '/';
@@ -552,7 +552,7 @@ static int llex (LexState *ls, SemInfo *seminfo) {
         if (check_next1(ls, '.')) {
           if (check_next1(ls, '.'))
             return TK_DOTS;   /* '...' */
-          else if (check_next(ls, "="))
+          else if (check_next1(ls, '='))
             return TK_CONCATA;   /* '..=' */
           else return TK_CONCAT;   /* '..' */
         }
