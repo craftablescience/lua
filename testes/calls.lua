@@ -178,7 +178,7 @@ do   -- tail calls x chain of __call
   end
 
   -- build a chain of __call metamethods ending in function 'foo'
-  for i = 1, 100 do
+  for i = 1, 15 do
     foo = setmetatable({}, {__call = foo})
   end
 
@@ -190,8 +190,8 @@ end
 print('+')
 
 
-do  -- testing chains of '__call'
-  local N = 20
+do   print"testing chains of '__call'"
+  local N = 15
   local u = table.pack
   for i = 1, N do
     u = setmetatable({i}, {__call = u})
@@ -204,8 +204,36 @@ do  -- testing chains of '__call'
     assert(Res[i][1] == i)
   end
   assert(Res[N + 1] == "a" and Res[N + 2] == "b" and Res[N + 3] == "c")
+
+  local function u (...)
+    local n = debug.getinfo(1, 't').extraargs
+    assert(select("#", ...) == n)
+    return n
+  end
+
+  for i = 0, N do
+    assert(u() == i)
+    u = setmetatable({}, {__call = u})
+  end
 end
 
+
+do    -- testing chains too long
+  local a = {}
+  for i = 1, 16 do    -- one too many
+    a = setmetatable({}, {__call = a})
+  end
+  local status, msg = pcall(a)
+  assert(not status and string.find(msg, "too long"))
+
+  setmetatable(a, {__call = a})   -- infinite chain
+  local status, msg = pcall(a)
+  assert(not status and string.find(msg, "too long"))
+
+  -- again, with a tail call
+  local status, msg = pcall(function () return a() end)
+  assert(not status and string.find(msg, "too long"))
+end
 
 a = nil
 (function (x) a=x end)(23)
@@ -342,20 +370,6 @@ do   -- another bug (in 5.4.0)
 end
 
 
-do   -- another bug (since 5.2)
-  -- corrupted binary dump: list of upvalue names is larger than number
-  -- of upvalues, overflowing the array of upvalues.
-  local code =
-   "\x1b\x4c\x75\x61\x54\x00\x19\x93\x0d\x0a\x1a\x0a\x04\x08\x08\x78\x56\z
-    \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x28\x77\x40\x00\x86\x40\z
-    \x74\x65\x6d\x70\x81\x81\x01\x00\x02\x82\x48\x00\x02\x00\xc7\x00\x01\z
-    \x00\x80\x80\x80\x82\x00\x00\x80\x81\x82\x78\x80\x82\x81\x86\x40\x74\z
-    \x65\x6d\x70"
-
-  assert(load(code))   -- segfaults in previous versions
-end
-
-
 x = string.dump(load("x = 1; return x"))
 a = assert(load(read1(x), nil, "b"))
 assert(a() == 1 and _G.x == 1)
@@ -468,7 +482,7 @@ print("testing binary chunks")
 do
   local header = string.pack("c4BBc6BBB",
     "\27Lua",                                  -- signature
-    0x54,                                      -- version 5.4 (0x54)
+    0x55,                                      -- version 5.5 (0x55)
     0,                                         -- format
     "\x19\x93\r\n\x1a\n",                      -- data
     4,                                         -- size of instruction
@@ -505,6 +519,42 @@ do
     local st, msg = load(string.sub(c, 1, i))
     assert(not st and string.find(msg, "truncated"))
   end
+end
+
+
+do   -- check reuse of strings in dumps
+  local str = "|" .. string.rep("X", 50) .. "|"
+  local foo = load(string.format([[
+    local str <const> = "%s"
+    return {
+      function () return str end,
+      function () return str end,
+      function () return str end
+    }
+  ]], str))
+  -- count occurrences of 'str' inside the dump
+  local dump = string.dump(foo)
+  local _, count = string.gsub(dump, str, {})
+  -- there should be only two occurrences:
+  -- one inside the source, other the string itself.
+  assert(count == 2)
+
+  if T then  -- check reuse of strings in undump
+    local funcs = load(dump)()
+    assert(string.format("%p", T.listk(funcs[1])[1]) ==
+           string.format("%p", T.listk(funcs[3])[1]))
+  end
+end
+
+
+do   -- test limit of multiple returns (254 values)
+  local code = "return 10" .. string.rep(",10", 253)
+  local res = {assert(load(code))()}
+  assert(#res == 254 and res[254] == 10)
+
+  code = code .. ",10"
+  local status, msg = load(code)
+  assert(not status and string.find(msg, "too many returns"))
 end
 
 print('OK')
